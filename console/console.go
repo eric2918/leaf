@@ -2,13 +2,15 @@ package console
 
 import (
 	"bufio"
-	"github.com/eric2918/leaf/conf"
-	"github.com/eric2918/leaf/network"
+	"io"
 	"math"
+	"os"
 	"strconv"
 	"strings"
+
+	"github.com/eric2918/leaf/conf"
 	"github.com/eric2918/leaf/log"
-	"os"
+	"github.com/eric2918/leaf/network"
 )
 
 var server *network.TCPServer
@@ -30,7 +32,7 @@ func run() {
 	for {
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
-		if err != nil {
+		if err != nil && err != io.EOF {
 			log.Error("console ReadString is error: %v", err)
 			continue
 		}
