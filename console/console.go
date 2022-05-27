@@ -32,8 +32,10 @@ func run() {
 	for {
 		reader := bufio.NewReader(os.Stdin)
 		line, err := reader.ReadString('\n')
-		log.Debug("console, line:%s, err:%v", line, err)
-		if err != nil && err != io.EOF {
+		if err != nil {
+			if err == io.EOF {
+				continue
+			}
 			log.Error("console ReadString is error: %v", err)
 			continue
 		}
