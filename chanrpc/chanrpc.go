@@ -3,10 +3,14 @@ package chanrpc
 import (
 	"errors"
 	"fmt"
-	"runtime"
 
-	"github.com/eric2918/leaf/conf"
 	"github.com/eric2918/leaf/log"
+)
+
+const (
+	FuncCommon = iota
+	FuncExtRet
+	FuncRoute
 )
 
 // one server per goroutine (goroutine not safe)
@@ -18,12 +22,18 @@ type Server struct {
 	// func(args []interface{})
 	// func(args []interface{}) interface{}
 	// func(args []interface{}) []interface{}
-	functions map[interface{}]interface{}
+	functions map[interface{}]*FuncInfo
 	ChanCall  chan *CallInfo
 }
 
+type FuncInfo struct {
+	id    interface{}
+	f     interface{}
+	fType int
+}
+
 type CallInfo struct {
-	f       interface{}
+	fInfo   *FuncInfo
 	args    []interface{}
 	chanRet chan *RetInfo
 	cb      interface{}
@@ -33,30 +43,32 @@ type RetInfo struct {
 	// nil
 	// interface{}
 	// []interface{}
-	ret interface{}
-	err error
+	Ret interface{}
+	Err error
 	// callback:
-	// func(err error)
-	// func(ret interface{}, err error)
-	// func(ret []interface{}, err error)
-	cb interface{}
+	// func(Err error)
+	// func(Ret interface{}, Err error)
+	// func(Ret []interface{}, Err error)
+	Cb interface{}
 }
+
+type ExtRetFunc func(ret interface{}, err error)
 
 type Client struct {
 	s               *Server
-	chanSyncRet     chan *RetInfo
+	ChanSyncRet     chan *RetInfo
 	ChanAsynRet     chan *RetInfo
 	pendingAsynCall int
 }
 
 func NewServer(l int) *Server {
 	s := new(Server)
-	s.functions = make(map[interface{}]interface{})
+	s.functions = make(map[interface{}]*FuncInfo)
 	s.ChanCall = make(chan *CallInfo, l)
 	return s
 }
 
-func assert(i interface{}) []interface{} {
+func Assert(i interface{}) []interface{} {
 	if i == nil {
 		return nil
 	} else {
@@ -65,11 +77,12 @@ func assert(i interface{}) []interface{} {
 }
 
 // you must call the function before calling Open and Go
-func (s *Server) Register(id interface{}, f interface{}) {
+func (s *Server) RegisterFromType(id interface{}, f interface{}, fType int) {
 	switch f.(type) {
 	case func([]interface{}):
-	case func([]interface{}) interface{}:
-	case func([]interface{}) []interface{}:
+	case func([]interface{}) error:
+	case func([]interface{}) (interface{}, error):
+	case func([]interface{}) ([]interface{}, error):
 	default:
 		panic(fmt.Sprintf("function id %v: definition of function is invalid", id))
 	}
@@ -78,21 +91,28 @@ func (s *Server) Register(id interface{}, f interface{}) {
 		panic(fmt.Sprintf("function id %v: already registered", id))
 	}
 
-	s.functions[id] = f
+	s.functions[id] = &FuncInfo{id: id, f: f, fType: fType}
+}
+
+func (s *Server) Register(id interface{}, f interface{}) {
+	s.RegisterFromType(id, f, FuncCommon)
 }
 
 func (s *Server) ret(ci *CallInfo, ri *RetInfo) (err error) {
 	if ci.chanRet == nil {
+		if ci.cb != nil {
+			ci.cb.(func(*RetInfo))(ri)
+		}
 		return
 	}
 
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(error)
+			log.Recover(r)
 		}
 	}()
 
-	ri.cb = ci.cb
+	ri.Cb = ci.cb
 	ci.chanRet <- ri
 	return
 }
@@ -100,32 +120,44 @@ func (s *Server) ret(ci *CallInfo, ri *RetInfo) (err error) {
 func (s *Server) exec(ci *CallInfo) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			if conf.LenStackBuf > 0 {
-				buf := make([]byte, conf.LenStackBuf)
-				l := runtime.Stack(buf, false)
-				err = fmt.Errorf("%v: %s", r, buf[:l])
-			} else {
-				err = fmt.Errorf("%v", r)
-			}
-
-			s.ret(ci, &RetInfo{err: fmt.Errorf("%v", r)})
+			log.Recover(r)
+			s.ret(ci, &RetInfo{Err: fmt.Errorf("%v", r)})
 		}
 	}()
 
-	// execute
-	switch ci.f.(type) {
-	case func([]interface{}):
-		ci.f.(func([]interface{}))(ci.args)
-		return s.ret(ci, &RetInfo{})
-	case func([]interface{}) interface{}:
-		ret := ci.f.(func([]interface{}) interface{})(ci.args)
-		return s.ret(ci, &RetInfo{ret: ret})
-	case func([]interface{}) []interface{}:
-		ret := ci.f.(func([]interface{}) []interface{})(ci.args)
-		return s.ret(ci, &RetInfo{ret: ret})
+	if ci.fInfo.fType != FuncCommon {
+		var extRetFunc ExtRetFunc = func(ret interface{}, err error) {
+			err = s.ret(ci, &RetInfo{Ret: ret, Err: err})
+			if err != nil {
+				log.Error("external run return is error: %v", err)
+			}
+		}
+
+		if ci.fInfo.fType == FuncRoute {
+			ci.args = append([]interface{}{ci.fInfo.id}, ci.args...)
+		}
+		ci.args = append(ci.args, extRetFunc)
 	}
 
-	panic("bug")
+	// execute
+	retInfo := &RetInfo{}
+	switch ci.fInfo.f.(type) {
+	case func([]interface{}):
+		ci.fInfo.f.(func([]interface{}))(ci.args)
+	case func([]interface{}) error:
+		retInfo.Err = ci.fInfo.f.(func([]interface{}) error)(ci.args)
+	case func([]interface{}) (interface{}, error):
+		retInfo.Ret, retInfo.Err = ci.fInfo.f.(func([]interface{}) (interface{}, error))(ci.args)
+	case func([]interface{}) ([]interface{}, error):
+		retInfo.Ret, retInfo.Err = ci.fInfo.f.(func([]interface{}) ([]interface{}, error))(ci.args)
+	default:
+		panic("bug")
+	}
+
+	if ci.fInfo.fType == FuncCommon {
+		return s.ret(ci, retInfo)
+	}
+	return
 }
 
 func (s *Server) Exec(ci *CallInfo) {
@@ -139,16 +171,19 @@ func (s *Server) Exec(ci *CallInfo) {
 func (s *Server) Go(id interface{}, args ...interface{}) {
 	f := s.functions[id]
 	if f == nil {
+		log.Error("function id %v: function not registered", id)
 		return
 	}
 
 	defer func() {
-		recover()
+		if r := recover(); r != nil {
+			log.Recover(r)
+		}
 	}()
 
 	s.ChanCall <- &CallInfo{
-		f:    f,
-		args: args,
+		fInfo: f,
+		args:  args,
 	}
 }
 
@@ -172,7 +207,7 @@ func (s *Server) Close() {
 
 	for ci := range s.ChanCall {
 		s.ret(ci, &RetInfo{
-			err: errors.New("chanrpc server closed"),
+			Err: errors.New("chanrpc server closed"),
 		})
 	}
 }
@@ -186,7 +221,7 @@ func (s *Server) Open(l int) *Client {
 
 func NewClient(l int) *Client {
 	c := new(Client)
-	c.chanSyncRet = make(chan *RetInfo, 1)
+	c.ChanSyncRet = make(chan *RetInfo, 1)
 	c.ChanAsynRet = make(chan *RetInfo, l)
 	return c
 }
@@ -195,10 +230,15 @@ func (c *Client) Attach(s *Server) {
 	c.s = s
 }
 
+func (c *Client) GetServer() *Server {
+	return c.s
+}
+
 func (c *Client) call(ci *CallInfo, block bool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(error)
+			log.Recover(r)
+			err = fmt.Errorf("%v", r)
 		}
 	}()
 
@@ -214,14 +254,14 @@ func (c *Client) call(ci *CallInfo, block bool) (err error) {
 	return
 }
 
-func (c *Client) f(id interface{}, n int) (f interface{}, err error) {
+func (c *Client) f(id interface{}, n int) (fInfo *FuncInfo, err error) {
 	if c.s == nil {
 		err = errors.New("server not attached")
 		return
 	}
 
-	f = c.s.functions[id]
-	if f == nil {
+	fInfo = c.s.functions[id]
+	if fInfo == nil {
 		err = fmt.Errorf("function id %v: function not registered", id)
 		return
 	}
@@ -229,11 +269,13 @@ func (c *Client) f(id interface{}, n int) (f interface{}, err error) {
 	var ok bool
 	switch n {
 	case 0:
-		_, ok = f.(func([]interface{}))
+		_, ok = fInfo.f.(func([]interface{}) error)
 	case 1:
-		_, ok = f.(func([]interface{}) interface{})
+		_, ok = fInfo.f.(func([]interface{}) (interface{}, error))
 	case 2:
-		_, ok = f.(func([]interface{}) []interface{})
+		_, ok = fInfo.f.(func([]interface{}) ([]interface{}, error))
+	case -1:
+		ok = true
 	default:
 		panic("bug")
 	}
@@ -251,16 +293,16 @@ func (c *Client) Call0(id interface{}, args ...interface{}) error {
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		fInfo:   f,
 		args:    args,
-		chanRet: c.chanSyncRet,
+		chanRet: c.ChanSyncRet,
 	}, true)
 	if err != nil {
 		return err
 	}
 
-	ri := <-c.chanSyncRet
-	return ri.err
+	ri := <-c.ChanSyncRet
+	return ri.Err
 }
 
 func (c *Client) Call1(id interface{}, args ...interface{}) (interface{}, error) {
@@ -270,16 +312,16 @@ func (c *Client) Call1(id interface{}, args ...interface{}) (interface{}, error)
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		fInfo:   f,
 		args:    args,
-		chanRet: c.chanSyncRet,
+		chanRet: c.ChanSyncRet,
 	}, true)
 	if err != nil {
 		return nil, err
 	}
 
-	ri := <-c.chanSyncRet
-	return ri.ret, ri.err
+	ri := <-c.ChanSyncRet
+	return ri.Ret, ri.Err
 }
 
 func (c *Client) CallN(id interface{}, args ...interface{}) ([]interface{}, error) {
@@ -289,33 +331,64 @@ func (c *Client) CallN(id interface{}, args ...interface{}) ([]interface{}, erro
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		fInfo:   f,
 		args:    args,
-		chanRet: c.chanSyncRet,
+		chanRet: c.ChanSyncRet,
 	}, true)
 	if err != nil {
 		return nil, err
 	}
 
-	ri := <-c.chanSyncRet
-	return assert(ri.ret), ri.err
+	ri := <-c.ChanSyncRet
+	return Assert(ri.Ret), ri.Err
+}
+
+func (c *Client) RpcCall(id interface{}, args ...interface{}) {
+	if len(args) < 1 {
+		panic("callback function not found")
+	}
+
+	lastIndex := len(args) - 1
+	cb := args[lastIndex]
+	args = args[:lastIndex]
+
+	var err error
+	f := c.s.functions[id]
+	if f == nil {
+		err = fmt.Errorf("function id %v: function not registered", id)
+		return
+	}
+
+	var cbFunc func(*RetInfo)
+	if cb != nil {
+		cbFunc = cb.(func(*RetInfo))
+	}
+
+	err = c.call(&CallInfo{
+		fInfo: f,
+		args:  args,
+		cb:    cb,
+	}, false)
+	if err != nil && cbFunc != nil {
+		cbFunc(&RetInfo{Ret: nil, Err: err})
+	}
 }
 
 func (c *Client) asynCall(id interface{}, args []interface{}, cb interface{}, n int) {
 	f, err := c.f(id, n)
 	if err != nil {
-		c.ChanAsynRet <- &RetInfo{err: err, cb: cb}
+		c.ChanAsynRet <- &RetInfo{Err: err, Cb: cb}
 		return
 	}
 
 	err = c.call(&CallInfo{
-		f:       f,
+		fInfo:   f,
 		args:    args,
 		chanRet: c.ChanAsynRet,
 		cb:      cb,
 	}, false)
 	if err != nil {
-		c.ChanAsynRet <- &RetInfo{err: err, cb: cb}
+		c.ChanAsynRet <- &RetInfo{Err: err, Cb: cb}
 		return
 	}
 }
@@ -336,13 +409,15 @@ func (c *Client) AsynCall(id interface{}, _args ...interface{}) {
 		n = 1
 	case func([]interface{}, error):
 		n = 2
+	case ExtRetFunc:
+		n = -1
 	default:
 		panic("definition of callback function is invalid")
 	}
 
 	// too many calls
 	if c.pendingAsynCall >= cap(c.ChanAsynRet) {
-		execCb(&RetInfo{err: errors.New("too many calls"), cb: cb})
+		execCb(&RetInfo{Err: errors.New("too many calls"), Cb: cb})
 		return
 	}
 
@@ -353,24 +428,20 @@ func (c *Client) AsynCall(id interface{}, _args ...interface{}) {
 func execCb(ri *RetInfo) {
 	defer func() {
 		if r := recover(); r != nil {
-			if conf.LenStackBuf > 0 {
-				buf := make([]byte, conf.LenStackBuf)
-				l := runtime.Stack(buf, false)
-				log.Error("%v: %s", r, buf[:l])
-			} else {
-				log.Error("%v", r)
-			}
+			log.Recover(r)
 		}
 	}()
 
 	// execute
-	switch ri.cb.(type) {
+	switch ri.Cb.(type) {
 	case func(error):
-		ri.cb.(func(error))(ri.err)
+		ri.Cb.(func(error))(ri.Err)
 	case func(interface{}, error):
-		ri.cb.(func(interface{}, error))(ri.ret, ri.err)
+		ri.Cb.(func(interface{}, error))(ri.Ret, ri.Err)
 	case func([]interface{}, error):
-		ri.cb.(func([]interface{}, error))(assert(ri.ret), ri.err)
+		ri.Cb.(func([]interface{}, error))(Assert(ri.Ret), ri.Err)
+	case ExtRetFunc:
+		ri.Cb.(ExtRetFunc)(ri.Ret, ri.Err)
 	default:
 		panic("bug")
 	}

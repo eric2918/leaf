@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -146,6 +147,12 @@ func Error(format string, a ...interface{}) {
 
 func Fatal(format string, a ...interface{}) {
 	gLogger.doPrintf(fatalLevel, printFatalLevel, format, a...)
+}
+
+func Recover(r interface{}) {
+	buf := make([]byte, 4096)
+	l := runtime.Stack(buf, false)
+	Error("%v: %s", r, buf[:l])
 }
 
 func Close() {

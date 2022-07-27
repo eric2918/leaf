@@ -19,7 +19,7 @@ func Init() {
 
 	server = new(network.TCPServer)
 	server.Addr = "localhost:" + strconv.Itoa(conf.ConsolePort)
-	server.MaxConnNum = int(math.MaxInt32)
+	server.MaxConnNum = math.MaxInt32
 	server.PendingWriteNum = 100
 	server.NewAgent = newAgent
 
