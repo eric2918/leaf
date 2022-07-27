@@ -7,6 +7,7 @@ import (
 
 	"github.com/eric2918/leaf/chanrpc"
 	"github.com/eric2918/leaf/log"
+	"github.com/eric2918/leaf/module"
 	"github.com/eric2918/leaf/network"
 )
 
@@ -27,9 +28,37 @@ type Gate struct {
 	TCPAddr      string
 	LenMsgLen    int
 	LittleEndian bool
+
+	// agent
+	GoLen              int
+	TimerDispatcherLen int
+	AsynCallLen        int
+	ChanRPCLen         int
+	OnAgentInit        func(Agent)
+	OnAgentDestroy     func(Agent)
 }
 
 func (gate *Gate) Run(closeSig chan bool) {
+	newAgent := func(conn network.Conn) network.Agent {
+		a := &agent{conn: conn, gate: gate}
+		if gate.ChanRPCLen > 0 {
+			skeleton := &module.Skeleton{
+				GoLen:              gate.GoLen,
+				TimerDispatcherLen: gate.TimerDispatcherLen,
+				AsynCallLen:        gate.AsynCallLen,
+				ChanRPCServer:      chanrpc.NewServer(gate.ChanRPCLen),
+			}
+			skeleton.Init()
+
+			a.skeleton = skeleton
+			a.chanRPC = skeleton.ChanRPCServer
+		}
+		if gate.AgentChanRPC != nil {
+			gate.AgentChanRPC.Go("NewAgent", a)
+		}
+		return a
+	}
+
 	var wsServer *network.WSServer
 	if gate.WSAddr != "" {
 		wsServer = new(network.WSServer)
@@ -41,11 +70,7 @@ func (gate *Gate) Run(closeSig chan bool) {
 		wsServer.CertFile = gate.CertFile
 		wsServer.KeyFile = gate.KeyFile
 		wsServer.NewAgent = func(conn *network.WSConn) network.Agent {
-			a := &agent{conn: conn, gate: gate}
-			if gate.AgentChanRPC != nil {
-				gate.AgentChanRPC.Go("NewAgent", a)
-			}
-			return a
+			return newAgent(conn)
 		}
 	}
 
@@ -59,11 +84,7 @@ func (gate *Gate) Run(closeSig chan bool) {
 		tcpServer.MaxMsgLen = gate.MaxMsgLen
 		tcpServer.LittleEndian = gate.LittleEndian
 		tcpServer.NewAgent = func(conn *network.TCPConn) network.Agent {
-			a := &agent{conn: conn, gate: gate}
-			if gate.AgentChanRPC != nil {
-				gate.AgentChanRPC.Go("NewAgent", a)
-			}
-			return a
+			return newAgent(conn)
 		}
 	}
 
@@ -86,11 +107,60 @@ func (gate *Gate) OnDestroy() {}
 
 type agent struct {
 	conn     network.Conn
+	skeleton *module.Skeleton
+	chanRPC  *chanrpc.Server
 	gate     *Gate
 	userData interface{}
 }
 
 func (a *agent) Run() {
+	closeSig := make(chan bool, 1)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Recover(r)
+		}
+
+		closeSig <- true
+	}()
+
+	handleMsgData := func(args []interface{}) error {
+		if a.gate.Processor != nil {
+			data := args[0].([]byte)
+			msg, err := a.gate.Processor.Unmarshal(data)
+			if err != nil {
+				return err
+			}
+
+			err = a.gate.Processor.Route(msg, a)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if a.chanRPC != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Recover(r)
+				}
+
+				if a.gate.OnAgentDestroy != nil {
+					a.gate.OnAgentDestroy(a)
+				}
+			}()
+
+			a.chanRPC.Register("handleMsgData", handleMsgData)
+
+			if a.gate.OnAgentInit != nil {
+				a.gate.OnAgentInit(a)
+			}
+
+			a.skeleton.Run(closeSig)
+		}()
+	}
+
 	for {
 		data, err := a.conn.ReadMsg()
 		if err != nil {
@@ -98,17 +168,14 @@ func (a *agent) Run() {
 			break
 		}
 
-		if a.gate.Processor != nil {
-			msg, err := a.gate.Processor.Unmarshal(data)
-			if err != nil {
-				log.Debug("unmarshal message error: %v", err)
-				break
-			}
-			err = a.gate.Processor.Route(msg, a)
-			if err != nil {
-				log.Debug("route message error: %v", err)
-				break
-			}
+		if a.chanRPC == nil {
+			err = handleMsgData([]interface{}{data})
+		} else {
+			err = a.chanRPC.Call0("handleMsgData", data)
+		}
+		if err != nil {
+			log.Debug("handle message: %v", err)
+			break
 		}
 	}
 }
@@ -158,4 +225,12 @@ func (a *agent) UserData() interface{} {
 
 func (a *agent) SetUserData(data interface{}) {
 	a.userData = data
+}
+
+func (a *agent) Skeleton() *module.Skeleton {
+	return a.skeleton
+}
+
+func (a *agent) ChanRPC() *chanrpc.Server {
+	return a.chanRPC
 }

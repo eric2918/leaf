@@ -1,10 +1,8 @@
 package timer
 
 import (
-	"runtime"
 	"time"
 
-	"github.com/eric2918/leaf/conf"
 	"github.com/eric2918/leaf/log"
 )
 
@@ -34,13 +32,7 @@ func (t *Timer) Cb() {
 	defer func() {
 		t.cb = nil
 		if r := recover(); r != nil {
-			if conf.LenStackBuf > 0 {
-				buf := make([]byte, conf.LenStackBuf)
-				l := runtime.Stack(buf, false)
-				log.Error("%v: %s", r, buf[:l])
-			} else {
-				log.Error("%v", r)
-			}
+			log.Recover(r)
 		}
 	}()
 

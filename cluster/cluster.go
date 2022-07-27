@@ -9,11 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	lgob "github.com/eric2918/leaf/network/gob"
+
 	"github.com/eric2918/leaf/chanrpc"
 	"github.com/eric2918/leaf/conf"
 	"github.com/eric2918/leaf/log"
 	"github.com/eric2918/leaf/network"
-	"github.com/eric2918/leaf/network/gob"
 )
 
 const (
@@ -36,7 +37,7 @@ func Init() {
 	if conf.ListenAddr != "" {
 		server = new(network.TCPServer)
 		server.Addr = conf.ListenAddr
-		server.MaxConnNum = math.MaxInt32
+		server.MaxConnNum = int(math.MaxInt32)
 		server.PendingWriteNum = conf.PendingWriteNum
 		server.LenMsgLen = 4
 		server.MaxMsgLen = math.MaxUint32
@@ -193,8 +194,8 @@ type Agent struct {
 	heartBeatWaitTimes int32
 
 	encMutex sync.Mutex
-	encoder  *gob.Encoder
-	decoder  *gob.Decoder
+	encoder  *lgob.Encoder
+	decoder  *lgob.Decoder
 
 	sync.Mutex
 	requestID  uint32
@@ -206,8 +207,8 @@ func newAgent(conn *network.TCPConn) network.Agent {
 	a.conn = conn
 	a.requestMap = make(map[uint32]*RequestInfo)
 
-	a.encoder = gob.NewEncoder()
-	a.decoder = gob.NewDecoder()
+	a.encoder = lgob.NewEncoder()
+	a.decoder = lgob.NewDecoder()
 
 	msg := &S2S_NotifyServerName{ServerName: conf.ServerName}
 	a.WriteMsg(msg)

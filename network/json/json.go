@@ -85,7 +85,12 @@ func (p *Processor) SetHandler(msg interface{}, msgHandler MsgHandler) {
 }
 
 // It's dangerous to call the method on routing or marshaling (unmarshaling)
-func (p *Processor) SetRawHandler(msgID string, msgRawHandler MsgHandler) {
+func (p *Processor) SetRawHandler(msg interface{}, msgRawHandler MsgHandler) {
+	msgType := reflect.TypeOf(msg)
+	if msgType == nil || msgType.Kind() != reflect.Ptr {
+		log.Fatal("json message pointer required")
+	}
+	msgID := msgType.Elem().Name()
 	i, ok := p.msgInfo[msgID]
 	if !ok {
 		log.Fatal("message %v not registered", msgID)
@@ -123,6 +128,8 @@ func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	}
 	if i.msgRouter != nil {
 		i.msgRouter.Go(msgType, msg, userData)
+	} else if i.msgHandler == nil {
+		log.Error("%v msg without any handler", msgID)
 	}
 	return nil
 }

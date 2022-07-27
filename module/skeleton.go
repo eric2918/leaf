@@ -68,6 +68,10 @@ func (s *Skeleton) Run(closeSig chan bool) {
 	}
 }
 
+func (s *Skeleton) GetChanAsynRet() chan *chanrpc.RetInfo {
+	return s.client.ChanAsynRet
+}
+
 func (s *Skeleton) AfterFunc(d time.Duration, cb func()) *timer.Timer {
 	if s.TimerDispatcherLen == 0 {
 		panic("invalid TimerDispatcherLen")

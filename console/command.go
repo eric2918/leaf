@@ -2,20 +2,30 @@ package console
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"runtime/pprof"
+	"strings"
 	"time"
 
 	"github.com/eric2918/leaf/chanrpc"
 	"github.com/eric2918/leaf/conf"
-	"github.com/eric2918/leaf/log"
 )
 
 var commands = []Command{
 	new(CommandHelp),
 	new(CommandCPUProf),
 	new(CommandProf),
+}
+
+func getCommand(name string) Command {
+	for _, _c := range commands {
+		if strings.EqualFold(_c.name(), name) {
+			return _c
+		}
+	}
+	return nil
 }
 
 type Command interface {

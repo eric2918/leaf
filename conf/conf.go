@@ -19,8 +19,4 @@ var (
 	ConnAddrs         map[string]string
 	PendingWriteNum   int
 	HeartBeatInterval int
-
-	MaxMsgLen    uint32
-	LenMsgLen    int
-	LittleEndian bool
 )
