@@ -3,19 +3,19 @@ package console
 import (
 	"bufio"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/eric2918/leaf/conf"
-	"github.com/eric2918/leaf/log"
 	"github.com/eric2918/leaf/network"
 )
 
 var server *network.TCPServer
 
 func Init() {
-	go run()
+	if conf.ConsolePort == 0 {
+		return
+	}
 
 	if conf.ConsolePort != 0 {
 		server = new(network.TCPServer)
@@ -24,34 +24,6 @@ func Init() {
 		server.PendingWriteNum = 100
 		server.NewAgent = newAgent
 		server.Start()
-	}
-}
-
-func run() {
-	for {
-		reader := bufio.NewReader(os.Stdin)
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			log.Error("console ReadString is error: %v", err)
-			continue
-		}
-		line = strings.TrimSuffix(line[:len(line)-1], "\r")
-
-		args := strings.Fields(line)
-		if len(args) == 0 {
-			continue
-		}
-
-		name := args[0]
-		c := getCommand(name)
-		if c == nil {
-			log.Error("command not found, try `help` for help\r\n")
-			continue
-		}
-		output := c.run(args[1:])
-		if output != "" {
-			log.Release("%v cmd run result: %v", name, output)
-		}
 	}
 }
 
