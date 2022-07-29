@@ -17,7 +17,7 @@ import (
 // -------------------------
 type Processor struct {
 	littleEndian bool
-	msgInfo      []*MsgInfo
+	msgInfo      map[uint16]*MsgInfo
 	msgID        map[reflect.Type]uint16
 }
 
@@ -38,6 +38,7 @@ type MsgRaw struct {
 func NewProcessor() *Processor {
 	p := new(Processor)
 	p.littleEndian = false
+	p.msgInfo = make(map[uint16]*MsgInfo)
 	p.msgID = make(map[reflect.Type]uint16)
 	return p
 }
@@ -91,7 +92,7 @@ func (p *Processor) SetHandler(msg proto.Message, msgHandler MsgHandler) {
 
 // It's dangerous to call the method on routing or marshaling (unmarshaling)
 func (p *Processor) SetRawHandler(id uint16, msgRawHandler MsgHandler) {
-	if id >= uint16(len(p.msgInfo)) {
+	if _, ok := p.msgInfo[id]; !ok {
 		log.Fatal("message id %v not registered", id)
 	}
 
@@ -102,10 +103,11 @@ func (p *Processor) SetRawHandler(id uint16, msgRawHandler MsgHandler) {
 func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	// raw
 	if msgRaw, ok := msg.(MsgRaw); ok {
-		if msgRaw.msgID >= uint16(len(p.msgInfo)) {
+		i, ok1 := p.msgInfo[msgRaw.msgID]
+		if !ok1 {
 			return fmt.Errorf("message id %v not registered", msgRaw.msgID)
 		}
-		i := p.msgInfo[msgRaw.msgID]
+
 		if i.msgRawHandler != nil {
 			i.msgRawHandler([]interface{}{msgRaw.msgID, msgRaw.msgRawData, userData})
 		}
@@ -143,12 +145,13 @@ func (p *Processor) Unmarshal(data []byte) (interface{}, error) {
 	} else {
 		id = binary.BigEndian.Uint16(data)
 	}
-	if id >= uint16(len(p.msgInfo)) {
+
+	i, ok := p.msgInfo[id]
+	if !ok {
 		return nil, fmt.Errorf("message id %v not registered", id)
 	}
 
 	// msg
-	i := p.msgInfo[id]
 	if i.msgRawHandler != nil {
 		return MsgRaw{id, data[2:]}, nil
 	} else {
@@ -183,6 +186,6 @@ func (p *Processor) Marshal(msg interface{}) ([][]byte, error) {
 // goroutine safe
 func (p *Processor) Range(f func(id uint16, t reflect.Type)) {
 	for id, i := range p.msgInfo {
-		f(uint16(id), i.msgType)
+		f(id, i.msgType)
 	}
 }
