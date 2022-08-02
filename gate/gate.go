@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/eric2918/leaf/conf"
+
 	"github.com/eric2918/leaf/chanrpc"
 	"github.com/eric2918/leaf/log"
 	"github.com/eric2918/leaf/module"
@@ -161,6 +163,24 @@ func (a *agent) Run() {
 		}()
 	}
 
+	active := make(chan bool)
+	heartBeatTime := conf.HeartBeatTime
+	if heartBeatTime == 0 {
+		heartBeatTime = 30 * time.Second
+	}
+	go func() {
+		for {
+			select {
+			case <-active:
+				// log.Debug("%s heartbeat ...", a.conn.RemoteAddr().String())
+			case <-time.After(heartBeatTime):
+				a.Destroy()
+				a.Close()
+				return
+			}
+		}
+	}()
+
 	for {
 		data, err := a.conn.ReadMsg()
 		if err != nil {
@@ -177,6 +197,7 @@ func (a *agent) Run() {
 			log.Debug("handle message: %v", err)
 			break
 		}
+		active <- true
 	}
 }
 

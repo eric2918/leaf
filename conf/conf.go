@@ -1,5 +1,7 @@
 package conf
 
+import "time"
+
 var (
 	LenStackBuf = 4096
 
@@ -19,4 +21,7 @@ var (
 	ConnAddrs         map[string]string
 	PendingWriteNum   int
 	HeartBeatInterval int
+
+	// client
+	HeartBeatTime time.Duration
 )
