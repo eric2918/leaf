@@ -16,16 +16,19 @@ import (
 var server *network.TCPServer
 
 func Init() {
-	go run()
+	//go run()
 
-	if conf.ConsolePort != 0 {
-		server = new(network.TCPServer)
-		server.Addr = "localhost:" + strconv.Itoa(conf.ConsolePort)
-		server.MaxConnNum = int(math.MaxInt32)
-		server.PendingWriteNum = 100
-		server.NewAgent = newAgent
-		server.Start()
+	if conf.ConsolePort == 0 {
+		return
 	}
+
+	server = new(network.TCPServer)
+	server.Addr = "localhost:" + strconv.Itoa(conf.ConsolePort)
+	server.MaxConnNum = int(math.MaxInt32)
+	server.PendingWriteNum = 100
+	server.NewAgent = newAgent
+	server.Start()
+
 }
 
 func run() {
