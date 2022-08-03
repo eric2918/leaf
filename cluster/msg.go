@@ -23,6 +23,7 @@ const (
 
 func init() {
 	gob.Register([]interface{}{})
+	gob.Register(map[string]string{})
 }
 
 type S2S_NotifyServerName struct {
