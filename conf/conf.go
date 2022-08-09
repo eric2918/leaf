@@ -12,7 +12,8 @@ var (
 
 	// console
 	ConsolePort   int
-	ConsolePrompt string = "Leaf# "
+	ConsolePrompt = "Leaf# "
+	ConsoleStdin  = false
 	ProfilePath   string
 
 	// cluster
