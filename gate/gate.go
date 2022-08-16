@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/eric2918/leaf/util"
+
 	"github.com/eric2918/leaf/conf"
 
 	"github.com/eric2918/leaf/chanrpc"
@@ -64,7 +66,7 @@ func (gate *Gate) Run(closeSig chan bool) {
 	var wsServer *network.WSServer
 	if gate.WSAddr != "" {
 		wsServer = new(network.WSServer)
-		wsServer.Addr = gate.WSAddr
+		wsServer.Addr = util.Addr(gate.WSAddr)
 		wsServer.MaxConnNum = gate.MaxConnNum
 		wsServer.PendingWriteNum = gate.PendingWriteNum
 		wsServer.MaxMsgLen = gate.MaxMsgLen
@@ -79,7 +81,7 @@ func (gate *Gate) Run(closeSig chan bool) {
 	var tcpServer *network.TCPServer
 	if gate.TCPAddr != "" {
 		tcpServer = new(network.TCPServer)
-		tcpServer.Addr = gate.TCPAddr
+		tcpServer.Addr = util.Addr(gate.TCPAddr)
 		tcpServer.MaxConnNum = gate.MaxConnNum
 		tcpServer.PendingWriteNum = gate.PendingWriteNum
 		tcpServer.LenMsgLen = gate.LenMsgLen

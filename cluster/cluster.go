@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/eric2918/leaf/util"
+
 	lgob "github.com/eric2918/leaf/network/gob"
 
 	"github.com/eric2918/leaf/chanrpc"
@@ -36,8 +38,8 @@ var (
 func Init() {
 	if conf.ListenAddr != "" {
 		server = new(network.TCPServer)
-		server.Addr = conf.ListenAddr
-		server.MaxConnNum = int(math.MaxInt32)
+		server.Addr = util.Addr(conf.ListenAddr)
+		server.MaxConnNum = math.MaxInt32
 		server.PendingWriteNum = conf.PendingWriteNum
 		server.LenMsgLen = 4
 		server.MaxMsgLen = math.MaxUint32
