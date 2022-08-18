@@ -156,6 +156,7 @@ func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	if i.msgRouter != nil {
 		i.msgRouter.Go(msgType, msg, userData)
 	} else if i.msgHandler == nil {
+		fmt.Println("gob:", msg)
 		log.Error("%v msg without any handler", msgID)
 	}
 	return nil
