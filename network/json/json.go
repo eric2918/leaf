@@ -101,7 +101,6 @@ func (p *Processor) SetRawHandler(msg interface{}, msgRawHandler MsgHandler) {
 
 // goroutine safe
 func (p *Processor) Route(msg interface{}, userData interface{}) error {
-	fmt.Println("json:", msg, userData)
 	// raw
 	if msgRaw, ok := msg.(MsgRaw); ok {
 		i, ok := p.msgInfo[msgRaw.msgID]
@@ -130,7 +129,6 @@ func (p *Processor) Route(msg interface{}, userData interface{}) error {
 	if i.msgRouter != nil {
 		i.msgRouter.Go(msgType, msg, userData)
 	} else if i.msgHandler == nil {
-		fmt.Println("json:", msg)
 		log.Error("%v msg without any handler", msgID)
 	}
 	return nil
