@@ -101,6 +101,7 @@ func (p *Processor) SetRawHandler(id uint16, msgRawHandler MsgHandler) {
 
 // goroutine safe
 func (p *Processor) Route(msg interface{}, userData interface{}) error {
+	fmt.Println("protobuf:", msg, userData)
 	// raw
 	if msgRaw, ok := msg.(MsgRaw); ok {
 		i, ok1 := p.msgInfo[msgRaw.msgID]
