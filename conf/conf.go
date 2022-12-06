@@ -11,7 +11,7 @@ var (
 	LogFlag  int
 
 	// console
-	ConsolePort   int
+	ConsoleAddr   string
 	ConsolePrompt = "Leaf# "
 	ConsoleStdin  = false
 	ProfilePath   string

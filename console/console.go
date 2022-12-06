@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"math"
 	"os"
-	"strconv"
 	"strings"
+
+	"github.com/eric2918/leaf/util"
 
 	"github.com/eric2918/leaf/conf"
 	"github.com/eric2918/leaf/log"
@@ -19,10 +20,10 @@ func Init() {
 		go run()
 	}
 
-	if conf.ConsolePort != 0 {
+	if conf.ConsoleAddr != "" {
 		server = new(network.TCPServer)
-		server.Addr = "localhost:" + strconv.Itoa(conf.ConsolePort)
-		server.MaxConnNum = int(math.MaxInt32)
+		server.Addr = util.Addr(conf.ListenAddr)
+		server.MaxConnNum = math.MaxInt32
 		server.PendingWriteNum = 100
 		server.NewAgent = newAgent
 		server.Start()
