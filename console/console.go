@@ -22,7 +22,7 @@ func Init() {
 
 	if conf.ConsoleAddr != "" {
 		server = new(network.TCPServer)
-		server.Addr = util.Addr(conf.ListenAddr)
+		server.Addr = util.Addr(conf.ConsoleAddr)
 		server.MaxConnNum = math.MaxInt32
 		server.PendingWriteNum = 100
 		server.NewAgent = newAgent
