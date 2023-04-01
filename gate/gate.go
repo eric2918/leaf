@@ -169,7 +169,6 @@ func (a *agent) Run() {
 	if heartBeatTime == 0 {
 		heartBeatTime = 30 * time.Second
 	}
-	log.Debug("heartBeatTime:%v", heartBeatTime)
 	active := make(chan bool)
 	go func() {
 		for {
